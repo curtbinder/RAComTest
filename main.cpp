@@ -127,7 +127,8 @@ int _tmain(int argc, _TCHAR* argv[])
             }
             g_iBaudRate = x;
         }
-        if ( _tcsicmp(argv[i], _T("usage")) == 0 )
+        if ( (_tcsicmp(argv[i], _T("usage")) == 0) ||
+             (_tcsicmp(argv[i], _T("help")) == 0) )
         {
             _tprintf(_T("Usage:  %s [OPTIONS]\n\n"), argv[0]);
             _tprintf(_T("Options:\n"));
@@ -137,6 +138,7 @@ int _tmain(int argc, _TCHAR* argv[])
             _tprintf(_T("                (# from 1 to 20 seconds).  Default is 5 seconds.\n"));
             _tprintf(_T("    baudrate=#  Sets the baudrate for the COM port.  Default is 57600.\n"));
             _tprintf(_T("                Other values:   9600, 19200, 57600, 115200\n"));
+            _tprintf(_T("    usage|help  Prints this screen\n"));
             _tprintf(_T("\n"));
             return 4;
         }
