@@ -117,7 +117,7 @@ BOOL TestComPort()
     }
 
     // configure the com port values
-    dcb.BaudRate	= CBR_19200;  // maybe 57600, CBR_57600
+    dcb.BaudRate	= CBR_19200;  // TODO maybe 57600, CBR_57600
     dcb.ByteSize	= 8;
     dcb.Parity	    = NOPARITY;
     dcb.StopBits	= ONESTOPBIT;
