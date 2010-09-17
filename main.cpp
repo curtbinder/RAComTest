@@ -5,12 +5,12 @@
 
 
 HANDLE g_hCom = NULL;
+BYTE g_1S = 0x00;  // first byte to send
+BYTE g_2S = 0x00;  // second byte to send
+BYTE g_1R = 0x00;  // first byte to receive
+BYTE g_2R = 0x00;  // second byte to receive
 
 BOOL TestForRA();
-//BOOL OpenPort(HANDLE &hCom, int nCom);
-//BOOL TestComPort(HANDLE &hCom);
-//BOOL SendCommand(HANDLE &hCom);
-//BOOL ReadData(HANDLE &hCom);
 BOOL OpenPort(int nCom);
 BOOL TestComPort();
 BOOL SendCommand();
@@ -29,10 +29,9 @@ int _tmain(int argc, _TCHAR* argv[])
 BOOL TestForRA()
 {
     BOOL bRet = FALSE;
-    //HANDLE hCom = NULL;
     int i;
 
-    // assume 20 ports for now, need to update this to be more efficient
+    // TODO assume 20 ports for now, need to update this to be more efficient
     for ( i = 0; i < 20; i++ )
     {
         if ( g_hCom )
@@ -135,8 +134,8 @@ BOOL TestComPort()
 BOOL SendCommand()
 {
 	BYTE buf[2];
-	buf[0] = 0x00;
-	buf[1] = 0x00;
+	buf[0] = g_1S;
+	buf[1] = g_2S;
 	DWORD dwBytesWritten;
 	if ( ! WriteFile(g_hCom,
 					 buf,
@@ -161,7 +160,7 @@ BOOL ReadData()
 	{
 		// verify that the value read back is correct
 		// should check to see if total bytes read are 2
-		if ( (buf[0] == 0x00) && (buf[1] == 0x00) )
+		if ( (buf[0] == g_1R) && (buf[1] == g_2R) )
 		{
 		    return TRUE;
 		}
