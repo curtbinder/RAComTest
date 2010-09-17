@@ -1,6 +1,3 @@
 # ignore file
 bin/
 obj/
-*.cbp
-*.depend
-*.layout

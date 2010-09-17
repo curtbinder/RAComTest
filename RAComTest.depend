@@ -1,0 +1,7 @@
+# depslib dependency file v1.0
+1284748331 source:d:\testprogramsming\racomtest\main.cpp
+	<stdio.h>
+	<stdlib.h>
+	<tchar.h>
+	<windows.h>
+
