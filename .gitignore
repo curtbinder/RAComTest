@@ -1,0 +1,4 @@
+# ignore file
+bin/
+obj/
+*.cbp
