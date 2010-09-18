@@ -1,0 +1,5 @@
+TODO
+----
+Add file version string
+Display file version string on help/usage
+Use QueryDosDevice() instead of looping through a specified range of COM ports
