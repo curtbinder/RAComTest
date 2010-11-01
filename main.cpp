@@ -19,7 +19,7 @@
 #include <tchar.h>
 #include <windows.h>
 
-
+TCHAR* g_sVersion = "1.05";
 HANDLE g_hCom = NULL;
 BYTE g_1S = 0x30;  // first byte to send
 BYTE g_2S = 0x20;  // second byte to send
@@ -33,13 +33,17 @@ int g_iBaudRate = CBR_57600;
 BOOL g_fVerbose = FALSE;
 BOOL g_fEnumPorts = FALSE;
 BOOL g_fListPorts = FALSE;
+BOOL g_fForceAllPorts = FALSE;
 
 BOOL TestForRA();
 BOOL OpenPort(int nCom);
 BOOL TestComPort();
 BOOL SendCommand();
 BOOL ReadData();
-BOOL GetPorts();
+BOOL GetPorts(int ports[], int &count, BOOL bGetCount, BOOL bFillArray);
+BOOL FillPortsArray(int ports[], int count);
+void ListPorts();
+int CountPorts();
 
 void Verbose(const TCHAR* format, ...)
 {
@@ -65,13 +69,18 @@ int _tmain(int argc, _TCHAR* argv[])
         }
         if ( _tcsnicmp(argv[i], _T("com="), 4) == 0 )
         {
+            if ( g_fForceAllPorts )
+            {
+                _tprintf(_T("Cannot specify ALLPORTS and a specific port at the same time\n"));
+                return 3;
+            }
             if ( _tcsicmp(argv[i]+4, _T("")) == 0 )
             {
                 _tprintf(_T("Invalid usage (%s). ex. COM=5"), argv[i]);
                 return 3;
             }
             int x = _ttoi(argv[i]+4);
-            if ( (x <= 0) || (x > 99) )
+            if ( (x < 1) || (x > 99) )
             {
                 _tprintf(_T("Invalid usage (%s). ex. COM=#, where # is between 1 and 99\n"), argv[i]);
                 return 3;
@@ -132,6 +141,10 @@ int _tmain(int argc, _TCHAR* argv[])
         if ( (_tcsicmp(argv[i], _T("usage")) == 0) ||
              (_tcsicmp(argv[i], _T("help")) == 0) )
         {
+            _tprintf(_T("Searches the COM ports on the system for the Reef Angel Controller.  If found,\n"));
+            _tprintf(_T("returns 0.  Otherwise, a value > 0 is returned.  Does not display any output\n"));
+            _tprintf(_T("unless the verbose option is specified.\n\n"));
+            _tprintf(_T("Version:  %s\n"), g_sVersion);
             _tprintf(_T("Usage:  %s [OPTIONS]\n\n"), argv[0]);
             _tprintf(_T("Options:\n"));
             _tprintf(_T("    verbose     Enables displaying all messages\n"));
@@ -141,15 +154,25 @@ int _tmain(int argc, _TCHAR* argv[])
             _tprintf(_T("    baudrate=#  Sets the baudrate for the COM port.  Default is 57600.\n"));
             _tprintf(_T("                Other values:   9600, 19200, 57600, 115200\n"));
             _tprintf(_T("    list        Lists the COM ports available on the system.\n"));
+            _tprintf(_T("    allports    Forces all ports from 1 to 99 to be tested,\n"));
+            _tprintf(_T("                instead of just the available ports on the system\n"));
             _tprintf(_T("    usage|help  Prints this screen\n"));
             _tprintf(_T("\n"));
             return 4;
         }
         if ( _tcsicmp(argv[i], _T("list")) == 0 )
         {
-            g_fListPorts = TRUE;
-            GetPorts();
-            return 5;
+            ListPorts();
+            return 4;
+        }
+        if ( _tcsicmp(argv[i], _T("allports")) == 0 )
+        {
+            if ( g_iStartPort == g_iStopPort )
+            {
+                _tprintf(_T("Cannot specify ALLPORTS and a specific port at the same time\n"));
+                return 3;
+            }
+            g_fForceAllPorts = TRUE;
         }
     }
 
@@ -166,10 +189,20 @@ int _tmain(int argc, _TCHAR* argv[])
 BOOL TestForRA()
 {
     BOOL fRet = FALSE;
-    int i;
+    int i, x;
+    int * ports = NULL;
+    int count = CountPorts();
+    ports = new int[count];
 
-    for ( i = g_iStartPort; i <= g_iStopPort; i++ )
+    if ( ! FillPortsArray(ports, count) )
     {
+        Verbose(_T("Failed to get list of COM ports\n"));
+        return fRet;
+    }
+
+    for ( x = 0; x < count; x++ )
+    {
+        i = ports[x];
         Verbose(_T("Testing COM%d\n"), i);
         if ( g_hCom )
         {
@@ -220,6 +253,11 @@ BOOL TestForRA()
     {
         CloseHandle(g_hCom);
         g_hCom = NULL;
+    }
+
+    if ( ports )
+    {
+        delete [] ports;
     }
 
     return fRet;
@@ -364,11 +402,12 @@ BOOL ReadData()
     return fRet;
 }
 
-BOOL GetPorts()
+BOOL GetPorts(int ports[], int &count, BOOL bGetCount, BOOL bFillArray)
 {
     BOOL fRet = FALSE;
     TCHAR buf[65535];
     unsigned long dwChars = QueryDosDevice(NULL, buf, sizeof(buf));
+    int x = 0;
 
     if ( dwChars == 0 )
     {
@@ -391,20 +430,90 @@ BOOL GetPorts()
             {
                 if ( g_fListPorts )
                 {
-                    printf("%s - %d\n", ptr, port);
+                    printf("%s\n", ptr);
                 }
                 else
                 {
                     // add to list of com ports
-                    // store in array for use later in program
+                    // store the port number in the array
+                    if ( bFillArray )
+                    {
+                        ports[x] = port;
+                    }
                 }
+                x++;
             }
             TCHAR *temp_ptr = strchr(ptr,0);
             dwChars -= (DWORD)((temp_ptr-ptr)/sizeof(TCHAR)+1);
             ptr = temp_ptr+1;
         }
         fRet = TRUE;
+
+        if ( bGetCount )
+        {
+            count = x;
+        }
+        if ( g_fListPorts )
+        {
+            printf("-------------------\n");
+            printf("Total:  %d port%c\n", x, (x>1)?'s':' ');
+        }
     }
 
     return fRet;
+}
+
+BOOL FillPortsArray(int ports[], int count)
+{
+    BOOL fRet = FALSE;
+    if ( g_fForceAllPorts )
+    {
+        for ( int i = 0; i < count; i++ )
+        {
+            ports[i] = i+1;
+        }
+        fRet = TRUE;
+    }
+    else
+    {
+        if ( count == 1 )
+        {
+            ports[0] = g_iStartPort;
+            fRet = TRUE;
+        }
+        else
+        {
+            fRet = GetPorts(ports, count, FALSE, TRUE);
+        }
+    }
+    return fRet;
+}
+
+void ListPorts()
+{
+    g_fListPorts = TRUE;
+    int count = 0;
+    GetPorts(NULL, count, FALSE, FALSE);
+}
+
+int CountPorts()
+{
+    int count = 0;
+    if ( g_fForceAllPorts )
+    {
+        count = 99;
+    }
+    else
+    {
+        if ( g_iStartPort == g_iStopPort )
+        {
+            // only testing 1 port based on command line input
+            count = 1;
+        }
+        else
+        {
+            GetPorts(NULL, count, TRUE, FALSE);
+        }
+    }
+    return count;
 }
