@@ -32,12 +32,14 @@ int g_iBaudRate = CBR_57600;
 
 BOOL g_fVerbose = FALSE;
 BOOL g_fEnumPorts = FALSE;
+BOOL g_fListPorts = FALSE;
 
 BOOL TestForRA();
 BOOL OpenPort(int nCom);
 BOOL TestComPort();
 BOOL SendCommand();
 BOOL ReadData();
+BOOL GetPorts();
 
 void Verbose(const TCHAR* format, ...)
 {
@@ -138,9 +140,16 @@ int _tmain(int argc, _TCHAR* argv[])
             _tprintf(_T("                (# from 1 to 20 seconds).  Default is 5 seconds.\n"));
             _tprintf(_T("    baudrate=#  Sets the baudrate for the COM port.  Default is 57600.\n"));
             _tprintf(_T("                Other values:   9600, 19200, 57600, 115200\n"));
+            _tprintf(_T("    list        Lists the COM ports available on the system.\n"));
             _tprintf(_T("    usage|help  Prints this screen\n"));
             _tprintf(_T("\n"));
             return 4;
+        }
+        if ( _tcsicmp(argv[i], _T("list")) == 0 )
+        {
+            g_fListPorts = TRUE;
+            GetPorts();
+            return 5;
         }
     }
 
@@ -219,7 +228,7 @@ BOOL TestForRA()
 BOOL OpenPort(int nCom)
 {
     TCHAR szPortName[32];
-    _stprintf(szPortName, _T("COM%d"), nCom);
+    _stprintf(szPortName, _T("\\\\.\\COM%d"), nCom);
     g_hCom = CreateFile(szPortName,
                         GENERIC_WRITE | GENERIC_READ,
                         0,
@@ -352,5 +361,50 @@ BOOL ReadData()
         // valid RA response
         fRet = TRUE;
     }
+    return fRet;
+}
+
+BOOL GetPorts()
+{
+    BOOL fRet = FALSE;
+    TCHAR buf[65535];
+    unsigned long dwChars = QueryDosDevice(NULL, buf, sizeof(buf));
+
+    if ( dwChars == 0 )
+    {
+        Verbose(_T("Error with querydosdevice:  (%ld)\n"), GetLastError());
+        fRet = FALSE;
+    }
+    else
+    {
+        if ( g_fListPorts )
+        {
+            printf("Available COM ports\n");
+            printf("-------------------\n");
+        }
+
+        TCHAR *ptr = buf;
+        while (dwChars)
+        {
+            int port;
+            if ( sscanf(ptr, "COM%d", &port) == 1 )
+            {
+                if ( g_fListPorts )
+                {
+                    printf("%s - %d\n", ptr, port);
+                }
+                else
+                {
+                    // add to list of com ports
+                    // store in array for use later in program
+                }
+            }
+            TCHAR *temp_ptr = strchr(ptr,0);
+            dwChars -= (DWORD)((temp_ptr-ptr)/sizeof(TCHAR)+1);
+            ptr = temp_ptr+1;
+        }
+        fRet = TRUE;
+    }
+
     return fRet;
 }
