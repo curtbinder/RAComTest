@@ -476,7 +476,7 @@ BOOL FillPortsArray(int ports[], int count)
     }
     else
     {
-        if ( count == 1 )
+        if ( g_iStartPort == g_iStopPort )
         {
             ports[0] = g_iStartPort;
             fRet = TRUE;
