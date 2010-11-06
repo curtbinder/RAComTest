@@ -19,7 +19,7 @@
 #include <tchar.h>
 #include <windows.h>
 
-TCHAR* g_sVersion = "1.05";
+TCHAR* g_sVersion = "1.06";
 HANDLE g_hCom = NULL;
 BYTE g_1S = 0x30;  // first byte to send
 BYTE g_2S = 0x20;  // second byte to send
@@ -28,6 +28,7 @@ BYTE g_2R = 0x10;  // second byte to receive
 int g_iStartPort = 1;
 int g_iStopPort = 99;
 int g_iComTimeout = 5;
+int g_iRAComPort = 0;
 int g_iBaudRate = CBR_57600;
 
 BOOL g_fVerbose = FALSE;
@@ -36,8 +37,9 @@ BOOL g_fListPorts = FALSE;
 BOOL g_fForceAllPorts = FALSE;
 
 BOOL TestForRA();
+BOOL TestPort(int nCom);
 BOOL OpenPort(int nCom);
-BOOL TestComPort();
+BOOL ConfigureComPort();
 BOOL SendCommand();
 BOOL ReadData();
 BOOL GetPorts(int ports[], int &count, BOOL bGetCount, BOOL bFillArray);
@@ -72,18 +74,18 @@ int _tmain(int argc, _TCHAR* argv[])
             if ( g_fForceAllPorts )
             {
                 _tprintf(_T("Cannot specify ALLPORTS and a specific port at the same time\n"));
-                return 3;
+                return 0;
             }
             if ( _tcsicmp(argv[i]+4, _T("")) == 0 )
             {
                 _tprintf(_T("Invalid usage (%s). ex. COM=5"), argv[i]);
-                return 3;
+                return 0;
             }
             int x = _ttoi(argv[i]+4);
             if ( (x < 1) || (x > 99) )
             {
                 _tprintf(_T("Invalid usage (%s). ex. COM=#, where # is between 1 and 99\n"), argv[i]);
-                return 3;
+                return 0;
             }
             g_iStartPort = x;
             g_iStopPort = x;
@@ -93,13 +95,13 @@ int _tmain(int argc, _TCHAR* argv[])
             if ( _tcsicmp(argv[i]+8, _T("")) == 0 )
             {
                 _tprintf(_T("Invalid usage (%s). ex. TIMEOUT=5\n"), argv[i]);
-                return 5;
+                return 0;
             }
             int x = _ttoi(argv[i]+8);
             if ( (x <= 0) || (x > 20) )
             {
                 _tprintf(_T("Invalid usage (%s). ex. TIMEOUT=#, where # is between 1 and 20\n"), argv[i]);
-                return 5;
+                return 0;
             }
             g_iComTimeout = x;
         }
@@ -108,7 +110,7 @@ int _tmain(int argc, _TCHAR* argv[])
             if ( _tcsicmp(argv[i]+9, _T("")) == 0 )
             {
                 _tprintf(_T("Invalid usage (%s). ex. BAUDRATE=57600\n"), argv[i]);
-                return 6;
+                return 0;
             }
             unsigned long ulRate = _ttol(argv[i]+9);
             int x;
@@ -142,8 +144,9 @@ int _tmain(int argc, _TCHAR* argv[])
              (_tcsicmp(argv[i], _T("help")) == 0) )
         {
             _tprintf(_T("Searches the COM ports on the system for the Reef Angel Controller.  If found,\n"));
-            _tprintf(_T("returns 0.  Otherwise, a value > 0 is returned.  Does not display any output\n"));
-            _tprintf(_T("unless the verbose option is specified.\n\n"));
+            _tprintf(_T("returns the port number that the first Reef Angel Controller is connected.\n"));
+            _tprintf(_T("Otherwise, 0 is returned.  Does not display any output unless the verbose\n"));
+            _tprintf(_T("option is specified or list is specified.\n\n"));
             _tprintf(_T("Version:  %s\n"), g_sVersion);
             _tprintf(_T("Usage:  %s [OPTIONS]\n\n"), argv[0]);
             _tprintf(_T("Options:\n"));
@@ -158,19 +161,19 @@ int _tmain(int argc, _TCHAR* argv[])
             _tprintf(_T("                instead of just the available ports on the system\n"));
             _tprintf(_T("    usage|help  Prints this screen\n"));
             _tprintf(_T("\n"));
-            return 4;
+            return 0;
         }
         if ( _tcsicmp(argv[i], _T("list")) == 0 )
         {
             ListPorts();
-            return 4;
+            return 0;
         }
         if ( _tcsicmp(argv[i], _T("allports")) == 0 )
         {
             if ( g_iStartPort == g_iStopPort )
             {
                 _tprintf(_T("Cannot specify ALLPORTS and a specific port at the same time\n"));
-                return 3;
+                return 0;
             }
             g_fForceAllPorts = TRUE;
         }
@@ -179,17 +182,17 @@ int _tmain(int argc, _TCHAR* argv[])
     if ( ! TestForRA() )
     {
         // we failed to find RA Controller
-        Verbose(_T("Failed to find RA Controller\n"));
-        return 1;
+        Verbose(_T("Failed to find ReefAngel Controller\n"));
+        return 0;
     }
-    Verbose(_T("Found RA Controller\n"));
-    return 0;
+    Verbose(_T("Found ReefAngel Controller on COM%d\n"), g_iRAComPort);
+    return g_iRAComPort;
 }
 
 BOOL TestForRA()
 {
     BOOL fRet = FALSE;
-    int i, x;
+    int i;
     int * ports = NULL;
     int count = CountPorts();
     ports = new int[count];
@@ -200,64 +203,86 @@ BOOL TestForRA()
         return fRet;
     }
 
-    for ( x = 0; x < count; x++ )
+    for ( i = 0; i < count; i++ )
     {
-        i = ports[x];
-        Verbose(_T("Testing COM%d\n"), i);
-        if ( g_hCom )
+        if ( TestPort(ports[i]) )
         {
-            CloseHandle(g_hCom);
-            g_hCom = NULL;
-        }
-
-        Verbose(_T("(COM%d): Opening port\n"), i);
-        if ( ! OpenPort(i) )
-        {
-            Verbose(_T("(COM%d): Failed to open port\n"), i);
-            continue;
-        }
-        if ( g_hCom )
-        {
-            CloseHandle(g_hCom);
-            Verbose(_T("(COM%d): Closing port\n"), i);
-            g_hCom = NULL;
-        }
-        Verbose(_T("(COM%d): Opening port (again)\n"), i);
-        if ( ! OpenPort(i) )
-        {
-            Verbose(_T("(COM%d): Failed to open port (again)\n"), i);
-            continue;
-        }
-
-        Sleep(1000);
-        // We have a good com port, now let's see if it's a valid RA Controller
-        Verbose(_T("(COM%d): Sending command (0x%02X, 0x%02X)\n"), i, g_1S, g_2S);
-        if ( ! SendCommand() )
-        {
-            Verbose(_T("(COM%d Failed to send command\n"), i);
-            continue;
-        }
-
-        Verbose(_T("(COM%d): Reading response, expecting (0x%02X, 0x%02X)\n"), i, g_1R, g_2R);
-        if ( ReadData() )
-        {
-            // we got the proper response
-            fRet = true;
-            Verbose(_T("(COM%d): Valid response\n"), i);
+            fRet = TRUE;
+            g_iRAComPort = ports[i];
             break;
         }
     }  // for i
 
-    // extra sanity check to make sure that the port is closed
+    if ( ports )
+    {
+        delete [] ports;
+    }
+
+    return fRet;
+}
+
+BOOL TestPort(int nCom)
+{
+    BOOL fRet = FALSE;
+
     if ( g_hCom )
     {
         CloseHandle(g_hCom);
         g_hCom = NULL;
     }
 
-    if ( ports )
+    Verbose(_T("Testing COM%d\n"), nCom);
+
+    try
     {
-        delete [] ports;
+        Verbose(_T("(COM%d): Opening port\n"), nCom);
+        if ( ! OpenPort(nCom) )
+        {
+            Verbose(_T("(COM%d): Failed to open port\n"), nCom);
+            throw;
+        }
+
+        if ( g_hCom )
+        {
+            CloseHandle(g_hCom);
+            Verbose(_T("(COM%d): Closing port\n"), nCom);
+            g_hCom = NULL;
+        }
+
+        Verbose(_T("(COM%d): Opening port (again)\n"), nCom);
+        if ( ! OpenPort(nCom) )
+        {
+            Verbose(_T("(COM%d): Failed to open port (again)\n"), nCom);
+            throw;
+        }
+
+        Sleep(1000);
+        // We have a good com port, now let's see if it's a valid RA Controller
+        Verbose(_T("(COM%d): Sending command (0x%02X, 0x%02X)\n"), nCom, g_1S, g_2S);
+        if ( ! SendCommand() )
+        {
+            Verbose(_T("(COM%d Failed to send command\n"), nCom);
+            throw;
+        }
+
+        Verbose(_T("(COM%d): Reading response, expecting (0x%02X, 0x%02X)\n"), nCom, g_1R, g_2R);
+        if ( ReadData() )
+        {
+            // we got the proper response
+            fRet = TRUE;
+            Verbose(_T("(COM%d): Valid response\n"), nCom);
+        }
+    }
+    catch(...)
+    {
+        fRet = FALSE;
+    }
+
+    // extra sanity check to make sure that the port is closed
+    if ( g_hCom )
+    {
+        CloseHandle(g_hCom);
+        g_hCom = NULL;
     }
 
     return fRet;
@@ -283,7 +308,7 @@ BOOL OpenPort(int nCom)
     }
 
     Verbose(_T("(COM%d): Testing COM state\n"), nCom);
-    if ( ! TestComPort() )
+    if ( ! ConfigureComPort() )
     {
         if ( g_hCom )
         {
@@ -297,7 +322,7 @@ BOOL OpenPort(int nCom)
     return TRUE;
 }
 
-BOOL TestComPort()
+BOOL ConfigureComPort()
 {
     DCB dcb;
     // prep the serial port for communication
@@ -408,6 +433,10 @@ BOOL GetPorts(int ports[], int &count, BOOL bGetCount, BOOL bFillArray)
     TCHAR buf[65535];
     unsigned long dwChars = QueryDosDevice(NULL, buf, sizeof(buf));
     int x = 0;
+    int racount = 0;
+    bool fFound = false;
+    char* ra = "ReefAngel";
+    char* none = "None";
 
     if ( dwChars == 0 )
     {
@@ -418,19 +447,25 @@ BOOL GetPorts(int ports[], int &count, BOOL bGetCount, BOOL bFillArray)
     {
         if ( g_fListPorts )
         {
-            printf("Available COM ports\n");
-            printf("-------------------\n");
+            _tprintf(_T("Available COM ports\n"));
+            _tprintf(_T("-------------------\n"));
         }
 
         TCHAR *ptr = buf;
         while (dwChars)
         {
             int port;
-            if ( sscanf(ptr, "COM%d", &port) == 1 )
+            if ( _stscanf(ptr, "COM%d", &port) == 1 )
             {
                 if ( g_fListPorts )
                 {
-                    printf("%s\n", ptr);
+                    fFound = false;
+                    if ( TestPort(port) )
+                    {
+                        racount++;
+                        fFound = true;
+                    }
+                    _tprintf(_T("%-5s - %s\n"), ptr, (fFound)?ra:none);
                 }
                 else
                 {
@@ -455,8 +490,9 @@ BOOL GetPorts(int ports[], int &count, BOOL bGetCount, BOOL bFillArray)
         }
         if ( g_fListPorts )
         {
-            printf("-------------------\n");
-            printf("Total:  %d port%c\n", x, (x>1)?'s':' ');
+            _tprintf(_T("-------------------\n"));
+            _tprintf(_T("Total:  %d port%c\n"), x, (x>1)?'s':' ');
+            _tprintf(_T("ReefAngel:  %d found\n"), racount);
         }
     }
 
