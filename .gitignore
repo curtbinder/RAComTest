@@ -1,3 +1,4 @@
 # ignore file
 bin/
 obj/
+*.layout
