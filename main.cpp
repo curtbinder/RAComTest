@@ -19,7 +19,7 @@
 #include <tchar.h>
 #include <windows.h>
 
-TCHAR* g_sVersion = "1.06";
+TCHAR* g_sVersion = "1.10";
 HANDLE g_hCom = NULL;
 BYTE g_1S = 0x30;  // first byte to send
 BYTE g_2S = 0x20;  // second byte to send
@@ -29,12 +29,13 @@ int g_iStartPort = 1;
 int g_iStopPort = 99;
 int g_iComTimeout = 5;
 int g_iRAComPort = 0;
-int g_iBaudRate = CBR_57600;
+int g_iBaudRate = CBR_115200;
 
 BOOL g_fVerbose = FALSE;
 BOOL g_fEnumPorts = FALSE;
 BOOL g_fListPorts = FALSE;
 BOOL g_fForceAllPorts = FALSE;
+BOOL g_fOnlyGivenBaudRate = FALSE;
 
 BOOL TestForRA();
 BOOL TestPort(int nCom);
@@ -60,6 +61,7 @@ void Verbose(const TCHAR* format, ...)
 
 int _tmain(int argc, _TCHAR* argv[])
 {
+    //BOOL fFoundController = FALSE;
     int i;
     for ( i = 1; i < argc; i++ )
     {
@@ -126,12 +128,12 @@ int _tmain(int argc, _TCHAR* argv[])
                     x = CBR_19200;
                     break;
                 }
-                default:
                 case 57600:
                 {
                     x = CBR_57600;
                     break;
                 }
+                default:
                 case 115200:
                 {
                     x = CBR_115200;
@@ -139,14 +141,18 @@ int _tmain(int argc, _TCHAR* argv[])
                 }
             }
             g_iBaudRate = x;
+            // Specified baud rate, so only check this baud rate instead of both 57600 and 115200
+            g_fOnlyGivenBaudRate = TRUE;
         }
         if ( (_tcsicmp(argv[i], _T("usage")) == 0) ||
              (_tcsicmp(argv[i], _T("help")) == 0) )
         {
-            _tprintf(_T("Searches the COM ports on the system for the Reef Angel Controller.  If found,\n"));
+            _tprintf(_T("\nSearches the COM ports on the system for the Reef Angel Controller.  If found,\n"));
             _tprintf(_T("returns the port number that the first Reef Angel Controller is connected.\n"));
+            _tprintf(_T("If the Reef Angel Controller is running the optiboot booloader, the port\n"));
+            _tprintf(_T("number of the controller is returned plus 100.  (Ex. COM3 = 103)\n"));
             _tprintf(_T("Otherwise, 0 is returned.  Does not display any output unless the verbose\n"));
-            _tprintf(_T("option is specified or list is specified.\n\n"));
+            _tprintf(_T("option or list option is specified.\n\n"));
             _tprintf(_T("Version:  %s\n"), g_sVersion);
             _tprintf(_T("Usage:  %s [OPTIONS]\n\n"), argv[0]);
             _tprintf(_T("Options:\n"));
@@ -154,7 +160,7 @@ int _tmain(int argc, _TCHAR* argv[])
             _tprintf(_T("    com=#       Specifically tests specified COM port.  (# from 1 to 99)\n"));
             _tprintf(_T("    timeout=#   Sets the timeout for waiting for data back from the controller.\n"));
             _tprintf(_T("                (# from 1 to 20 seconds).  Default is 5 seconds.\n"));
-            _tprintf(_T("    baudrate=#  Sets the baudrate for the COM port.  Default is 57600.\n"));
+            _tprintf(_T("    baudrate=#  Sets the baudrate for the COM port.  Default is 115200.\n"));
             _tprintf(_T("                Other values:   9600, 19200, 57600, 115200\n"));
             _tprintf(_T("    list        Lists the COM ports available on the system.\n"));
             _tprintf(_T("    allports    Forces all ports from 1 to 99 to be tested,\n"));
@@ -185,6 +191,7 @@ int _tmain(int argc, _TCHAR* argv[])
         Verbose(_T("Failed to find ReefAngel Controller\n"));
         return 0;
     }
+
     Verbose(_T("Found ReefAngel Controller on COM%d\n"), g_iRAComPort);
     return g_iRAComPort;
 }
@@ -205,11 +212,28 @@ BOOL TestForRA()
 
     for ( i = 0; i < count; i++ )
     {
+        if ( ! g_fOnlyGivenBaudRate )
+        {
+            // ensure baudrate is set
+            g_iBaudRate = CBR_115200;
+        }
+        // Test with 115200 first or whatever the user specified on the command line.
         if ( TestPort(ports[i]) )
         {
             fRet = TRUE;
-            g_iRAComPort = ports[i];
+            g_iRAComPort = ports[i] + 100;  // add 100 to indicate it's an optiboot controller
             break;
+        }
+        if ( ! g_fOnlyGivenBaudRate )
+        {
+            // Test 57600 rate next for the standard controller
+            g_iBaudRate = CBR_57600;
+            if ( TestPort(ports[i]) )
+            {
+                fRet = TRUE;
+                g_iRAComPort = ports[i];
+                break;
+            }
         }
     }  // for i
 
@@ -460,10 +484,26 @@ BOOL GetPorts(int ports[], int &count, BOOL bGetCount, BOOL bFillArray)
                 if ( g_fListPorts )
                 {
                     fFound = false;
+                    if ( ! g_fOnlyGivenBaudRate )
+                    {
+                        g_iBaudRate = CBR_115200;
+                    }
                     if ( TestPort(port) )
                     {
                         racount++;
                         fFound = true;
+                    }
+                    else
+                    {
+                        if ( ! g_fOnlyGivenBaudRate )
+                        {
+                            g_iBaudRate = CBR_57600;
+                            if ( TestPort(port) )
+                            {
+                                racount++;
+                                fFound = true;
+                            }
+                        }
                     }
                     _tprintf(_T("%-5s - %s\n"), ptr, (fFound)?ra:none);
                 }
